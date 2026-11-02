@@ -17,8 +17,6 @@ Requires `curl`, `tar`, and `git`. Install `wt` with:
 curl -fsSL https://raw.githubusercontent.com/mazehall/wt/main/install.sh | bash
 ```
 
-While the repository is private, export a token with read access and pass it on: `export GITHUB_TOKEN=<token>; curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://raw.githubusercontent.com/mazehall/wt/main/install.sh | bash`.
-
 The installer downloads the repository archive into `~/.local/share/wt` and links `bin/wt` into the directory of an existing `wt` symlink, or else the first writable directory on `PATH` among `~/.local/bin`, `~/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. If none is on `PATH`, it creates `~/.local/bin` and prints the line to add to your shell profile. Rerun it to update. Set `WT_HOME` to change the install location and `WT_REF` to install another branch or tag.
 
 `wt completion <shell>` prints completion definitions for Fish, Bash, or Zsh. Install them with:
@@ -71,7 +69,7 @@ The task name is one path component; use `--branch` to choose a branch name that
 ## Testing
 
 - `tests/path-components.sh` checks `wt` directly against temporary hubs and worktrees. Run it on the host.
-- `tests/install-docker.sh` installs `wt` into fresh Ubuntu containers, as root and as a non-root user, then checks the one-liner, `wt init`/`wt new`, completions, and updates. It needs Docker and a GitHub token with read access while the repository is private. It installs from the pushed archive (`WT_REF`, default `main`), so push before running it. A run takes about a minute.
+- `tests/install-docker.sh` installs `wt` into fresh Ubuntu containers, as root and as a non-root user, then checks the one-liner, `wt init`/`wt new`, completions, and updates. It needs Docker. It installs from the pushed archive (`WT_REF`, default `main`), so push before running it. A run takes about a minute.
 
 Run both after changing `bin/wt` or `install.sh`, and run the Docker test before every push that touches the installer or the install path.
 

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Install wt: download the repository snapshot, link bin/wt into PATH.
 #   curl -fsSL https://raw.githubusercontent.com/mazehall/wt/main/install.sh | bash
-# Env: GITHUB_TOKEN (only while the repository is private), WT_REF (default main),
-#      WT_HOME (default ~/.local/share/wt). Rerun to update.
+# Env: WT_REF (default main), WT_HOME (default ~/.local/share/wt). Rerun to update.
 set -euo pipefail
 
 repo="mazehall/wt"
@@ -14,18 +13,10 @@ command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v tar >/dev/null 2>&1 || die "tar is required"
 command -v git >/dev/null 2>&1 || die "wt needs git; install it and rerun"
 
-fetch() { # url dest
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
-    curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -o "$2" "$1"
-  else
-    curl -fsSL -o "$2" "$1"
-  fi
-}
-
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-fetch "https://api.github.com/repos/$repo/tarball/$ref" "$tmp/src.tgz" ||
-  die "download failed (private repository? set GITHUB_TOKEN)"
+curl -fsSL -o "$tmp/src.tgz" "https://api.github.com/repos/$repo/tarball/$ref" ||
+  die "download of $repo@$ref failed"
 mkdir "$tmp/src"
 tar -xzf "$tmp/src.tgz" -C "$tmp/src" --strip-components=1
 [ -f "$tmp/src/bin/wt" ] || die "archive has no bin/wt"
