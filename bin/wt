@@ -306,11 +306,11 @@ cmd_new() {
 
   if hub_git "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
     note "wt: reusing existing branch $branch"
-    hub_git "$repo" worktree add "$dir" "$branch"
+    hub_git "$repo" worktree add -q "$dir" "$branch"
   elif [ -n "$base" ]; then
-    hub_git "$repo" worktree add -b "$branch" "$dir" "$base"
+    hub_git "$repo" worktree add -q -b "$branch" "$dir" "$base"
   else
-    hub_git "$repo" worktree add -b "$branch" "$dir" "$(default_base "$repo")"
+    hub_git "$repo" worktree add -q -b "$branch" "$dir" "$(default_base "$repo")"
   fi
   printf '%s\n' "$dir"
 }
