@@ -68,6 +68,13 @@ The task name is one path component; use `--branch` to choose a branch name that
 - `wt rm --force` discards uncommitted changes in the selected worktree.
 - `wt init` accepts a remote URL or a local checkout path; the source checkout is left untouched.
 
+## Testing
+
+- `tests/path-components.sh` checks `wt` directly against temporary hubs and worktrees. Run it on the host.
+- `tests/install-docker.sh` installs `wt` into fresh Ubuntu containers, as root and as a non-root user, then checks the one-liner, `wt init`/`wt new`, completions, and updates. It needs Docker and a GitHub token with read access while the repository is private. It installs from the pushed archive (`WT_REF`, default `main`), so push before running it. A run takes about a minute.
+
+Run both after changing `bin/wt` or `install.sh`, and run the Docker test before every push that touches the installer or the install path.
+
 ## License
 
 Copyright 2026 Jens Klose. Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
