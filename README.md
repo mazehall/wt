@@ -69,9 +69,10 @@ The task name is one path component; use `--branch` to choose a branch name that
 ## Testing
 
 - `tests/path-components.sh` checks `wt` directly against temporary hubs and worktrees. Run it on the host.
+- `tests/completion-zsh.sh` checks the zsh completion candidates without an interactive shell. It skips when zsh is not installed.
 - `tests/install-docker.sh` installs `wt` into fresh Ubuntu containers, as root and as a non-root user, then checks the one-liner, `wt init`/`wt new`, completions, and updates. It needs Docker. It installs from the pushed archive (`WT_REF`, default `main`), so push before running it. A run takes about a minute.
 
-Run both after changing `bin/wt` or `install.sh`, and run the Docker test before every push that touches the installer or the install path.
+Run them after changing `bin/wt`, `completions/`, or `install.sh`, and run the Docker test before every push that touches the installer or the install path.
 
 ## License
 

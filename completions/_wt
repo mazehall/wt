@@ -3,32 +3,100 @@
 _wt() {
     local command_name="$words[2]"
     local current="$words[CURRENT]"
-    local -a candidates
+    local previous="$words[CURRENT-1]"
+    local -a candidates positional
+    local i word skip=0 out project
 
     if (( CURRENT == 2 )); then
-        candidates=(init sync new list rm completion prune)
-        compadd -- $candidates
+        compadd -- init sync new list rm completion prune
         return
     fi
 
     case "$command_name" in
         completion)
-            compadd -- fish bash zsh ;;
-        init)
-            candidates=( ${(f)"$(wt __complete projects "$current" sources 2>/dev/null)"} )
-            compadd -- $candidates ;;
-        sync|list|prune)
-            candidates=( ${(f)"$(wt __complete projects "$current" hubs 2>/dev/null)"} )
-            [[ "$command_name" == sync ]] && candidates=(all $candidates)
-            compadd -- $candidates ;;
-        new|rm)
-            if [[ "$current" == -* ]]; then
-                compadd -- --repo --branch --base --force -f
-            else
-                candidates=( ${(f)"$(wt __complete projects "$current" hubs 2>/dev/null)"} )
-                compadd -- $candidates
-            fi ;;
+            [[ "$current" == -* ]] || compadd -- fish bash zsh
+            return ;;
     esac
+
+    # Positional arguments already typed, ignoring flags and their values.
+    for (( i = 3; i < CURRENT; i++ )); do
+        word="$words[i]"
+        if (( skip )); then
+            skip=0
+            continue
+        fi
+        case "$word" in
+            --branch|--base|--repo) skip=1 ;;
+            --) ;;
+            -*) ;;
+            *) positional+=("$word") ;;
+        esac
+    done
+
+    typeset -U candidates
+
+    case "$command_name" in
+        init)
+            [[ "$current" == -* ]] && return
+            out="$(wt __complete projects "$current" sources 2>/dev/null)"
+            [[ -n "$out" ]] && candidates=( ${(f)out} )
+            ;;
+        sync)
+            if [[ "$current" == -* ]]; then
+                candidates=(--all)
+            else
+                out="$(wt __complete projects "$current" hubs 2>/dev/null)"
+                [[ -n "$out" ]] && candidates=( ${(f)out} )
+            fi
+            ;;
+        list|prune)
+            [[ "$current" == -* ]] && return
+            out="$(wt __complete projects "$current" hubs 2>/dev/null)"
+            [[ -n "$out" ]] && candidates=( ${(f)out} )
+            ;;
+        new)
+            if [[ "$current" == -* ]]; then
+                candidates=(--repo --branch --base)
+            elif [[ "$previous" == --repo ]]; then
+                out="$(wt __complete projects "$current" hubs 2>/dev/null)"
+                [[ -n "$out" ]] && candidates=( ${(f)out} )
+            elif [[ "$previous" == --branch || "$previous" == --base ]]; then
+                return
+            elif (( ${#positional} == 0 )); then
+                # Inside a project the first argument is the new task name, not
+                # a repository, so do not suggest hubs there.
+                if [[ -z "$(wt __complete current 2>/dev/null)" ]]; then
+                    out="$(wt __complete projects "$current" hubs 2>/dev/null)"
+                    [[ -n "$out" ]] && candidates=( ${(f)out} )
+                fi
+            fi
+            ;;
+        rm)
+            if [[ "$current" == -* ]]; then
+                candidates=(--force -f)
+            elif (( ${#positional} == 0 )); then
+                project="$(wt __complete current 2>/dev/null)"
+                if [[ -n "$project" ]]; then
+                    out="$(wt __complete worktrees "$project" "$current" 2>/dev/null)"
+                    [[ -n "$out" ]] && candidates+=( ${(f)out} )
+                fi
+                out="$(wt __complete projects "$current" hubs 2>/dev/null)"
+                [[ -n "$out" ]] && candidates+=( ${(f)out} )
+            elif (( ${#positional} == 1 )); then
+                out="$(wt __complete worktrees "${positional[1]}" "$current" 2>/dev/null)"
+                [[ -n "$out" ]] && candidates=( ${(f)out} )
+            fi
+            ;;
+    esac
+
+    (( ${#candidates} )) && compadd -- $candidates
+    return 0
 }
 
-compdef _wt wt
+# Run directly when zsh autoloads this file for completion; register the
+# function when the file is sourced manually.
+if [[ "${zsh_eval_context[-1]}" == "loadautofunc" ]]; then
+    _wt "$@"
+else
+    compdef _wt wt
+fi
