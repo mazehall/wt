@@ -17,9 +17,13 @@ Requires `curl`, `tar`, and `git`. Install `wt` with:
 curl -fsSL https://raw.githubusercontent.com/mazehall/wt/main/install.sh | bash
 ```
 
-The installer downloads the repository archive into `~/.local/share/wt` and links `bin/wt` into the directory of an existing `wt` symlink, or else the first writable directory on `PATH` among `~/.local/bin`, `~/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. If none is on `PATH`, it creates `~/.local/bin` and prints the line to add to your shell profile. Rerun it to update. Set `WT_HOME` to change the install location and `WT_REF` to install another branch or tag.
+The installer downloads the repository archive into `~/.local/share/wt` and links `bin/wt` into the directory of an existing `wt` symlink, or else the first writable directory on `PATH` among `~/.local/bin`, `~/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. If none is on `PATH`, it creates `~/.local/bin` and prints the line to add to your shell profile. Rerun it to update. Set `WT_HOME` to change the install location and `WT_REF` to install another branch or tag. Pass them to `bash` on the right side of the pipe, not to `curl`:
 
-`wt completion <shell>` prints completion definitions for Fish, Bash, or Zsh. Install them with:
+```bash
+curl -fsSL https://raw.githubusercontent.com/mazehall/wt/main/install.sh | WT_REF=my-branch bash  # replace my-branch
+```
+
+`wt completion <shell>` prints completion definitions for Fish, Bash, or Zsh. Run the command for your shell once; only the lines marked `~/.zshrc` belong in your shell startup file.
 
 ```sh
 # Fish
@@ -29,12 +33,16 @@ wt completion fish > ~/.config/fish/completions/wt.fish
 # Bash (source ~/.bash_completion from your shell startup file if not already done)
 wt completion bash >> ~/.bash_completion
 
-# Zsh (add these lines to ~/.zshrc once)
+# Zsh: generate the completion once
 mkdir -p ~/.zfunc
 wt completion zsh > ~/.zfunc/_wt
+
+# Zsh: add these lines to ~/.zshrc, before any existing compinit call
 fpath=(~/.zfunc $fpath)
 autoload -Uz compinit && compinit
 ```
+
+If `~/.zshrc` already initializes completion, add only the `fpath` line before that `compinit` call and skip the extra `autoload`/`compinit` line. Rerun the `wt completion ...` command after updating `wt` (for Bash, replace the old block instead of appending a second copy); the installer updates the program but not generated completion files.
 
 Restart the shell or reload its completion setup after installing.
 
@@ -69,9 +77,10 @@ The task name is one path component; use `--branch` to choose a branch name that
 ## Testing
 
 - `tests/path-components.sh` checks `wt` directly against temporary hubs and worktrees. Run it on the host.
+- `tests/completion-zsh.sh` checks the zsh completion candidates without an interactive shell. It skips when zsh is not installed.
 - `tests/install-docker.sh` installs `wt` into fresh Ubuntu containers, as root and as a non-root user, then checks the one-liner, `wt init`/`wt new`, completions, and updates. It needs Docker. It installs from the pushed archive (`WT_REF`, default `main`), so push before running it. A run takes about a minute.
 
-Run both after changing `bin/wt` or `install.sh`, and run the Docker test before every push that touches the installer or the install path.
+Run them after changing `bin/wt`, `completions/`, or `install.sh`, and run the Docker test before every push that touches the installer or the install path.
 
 ## License
 

@@ -119,12 +119,16 @@ project_names() {
       [ -d "$hub" ] || continue
       name="$(basename "$hub" .git)"
       [[ "$name" == "$prefix"* ]] || continue
-      for existing in "${names[@]}"; do [ "$existing" = "$name" ] && continue 2; done
+      if [ "${#names[@]}" -gt 0 ]; then
+        for existing in "${names[@]}"; do [ "$existing" = "$name" ] && continue 2; done
+      fi
       names+=("$name")
     done
   fi
   if [ "$scope" = hubs ]; then
-    printf '%s\n' "${names[@]}"
+    if [ "${#names[@]}" -gt 0 ]; then
+      printf '%s\n' "${names[@]}"
+    fi
     return 0
   fi
   for dir in "$WT_ROOT"/*; do
@@ -132,10 +136,14 @@ project_names() {
     name="${dir##*/}"
     [ "$scope" != sources ] || [ ! -d "$(hub_of "$name")" ] || continue
     [[ "$name" == "$prefix"* ]] || continue
-    for existing in "${names[@]}"; do [ "$existing" = "$name" ] && continue 2; done
+    if [ "${#names[@]}" -gt 0 ]; then
+      for existing in "${names[@]}"; do [ "$existing" = "$name" ] && continue 2; done
+    fi
     names+=("$name")
   done
-  printf '%s\n' "${names[@]}"
+  if [ "${#names[@]}" -gt 0 ]; then
+    printf '%s\n' "${names[@]}"
+  fi
 }
 
 worktree_names() {
