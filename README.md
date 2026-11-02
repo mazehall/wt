@@ -11,12 +11,14 @@ Set `WT_HUB_ROOT` or `WT_ROOT` to change either location. The tool is a Bash scr
 
 ## Install
 
-Put `bin/wt` on `PATH`, for example:
+Clone the repository (private, so use `gh` or an SSH/HTTPS remote you have access to) and run the installer:
 
 ```bash
-mkdir -p "$HOME/bin"
-ln -s "$PWD/bin/wt" "$HOME/bin/wt"
+gh repo clone mazehall/wt ~/.local/share/wt
+~/.local/share/wt/install.sh
 ```
+
+`install.sh` links `bin/wt` into the first directory on `PATH` among `~/.local/bin`, `~/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. If none is on `PATH`, it creates `~/.local/bin` and prints the line to add to your shell profile. It runs `git pull --ff-only` first, so rerunning it updates `wt`; set `WT_NO_UPDATE=1` to skip that. The link points into the checkout, so keep it in place.
 
 `wt completion <shell>` prints completion definitions for Fish, Bash, or Zsh. Install them with:
 
