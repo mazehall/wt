@@ -1,0 +1,14 @@
+# Keep the repository limited to source, documentation, and tests.
+
+*
+!.gitignore
+!README.md
+!bin/
+!bin/wt
+!completions/
+!completions/wt.fish
+!completions/wt.bash
+!completions/_wt
+!tests/
+!tests/path-components.sh
+!LICENSE

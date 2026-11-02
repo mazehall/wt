@@ -1,0 +1,34 @@
+#compdef wt
+
+_wt() {
+    local command_name="$words[2]"
+    local current="$words[CURRENT]"
+    local -a candidates
+
+    if (( CURRENT == 2 )); then
+        candidates=(init sync new list rm completion prune)
+        compadd -- $candidates
+        return
+    fi
+
+    case "$command_name" in
+        completion)
+            compadd -- fish bash zsh ;;
+        init)
+            candidates=( ${(f)"$(wt __complete projects "$current" sources 2>/dev/null)"} )
+            compadd -- $candidates ;;
+        sync|list|prune)
+            candidates=( ${(f)"$(wt __complete projects "$current" hubs 2>/dev/null)"} )
+            [[ "$command_name" == sync ]] && candidates=(all $candidates)
+            compadd -- $candidates ;;
+        new|rm)
+            if [[ "$current" == -* ]]; then
+                compadd -- --repo --branch --base --force -f
+            else
+                candidates=( ${(f)"$(wt __complete projects "$current" hubs 2>/dev/null)"} )
+                compadd -- $candidates
+            fi ;;
+    esac
+}
+
+compdef _wt wt

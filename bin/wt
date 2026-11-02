@@ -1,0 +1,436 @@
+#!/usr/bin/env bash
+#
+# wt — bare-hub worktree manager.
+#
+# Layout:
+#   ~/agentic/<repo>.git      bare clone (the only clone), no working tree
+#   ~/projects/<repo>/<issue> worktrees, siblings of each other
+#
+# See ~/agentic/README.md for the rationale.
+
+set -euo pipefail
+
+HUB_ROOT="${WT_HUB_ROOT:-$HOME/agentic}"
+WT_ROOT="${WT_ROOT:-$HOME/projects}"
+
+die() { printf 'wt: %s\n' "$*" >&2; exit 1; }
+note() { printf '%s\n' "$*" >&2; }
+validate_component() {
+	local name="$1" value="$2"
+	case "$value" in
+		''|.|..|*/*) die "$name must be a non-empty path component" ;;
+	esac
+}
+
+
+hub_of() { printf '%s/%s.git\n' "$HUB_ROOT" "$1"; }
+hub_git() { local repo="$1"; shift; git --git-dir="$(hub_of "$repo")" "$@"; }
+
+require_hub() {
+	local repo="$1"
+  validate_component repo "$repo"
+  [ -d "$(hub_of "$repo")" ] || die "no hub for '$repo' — run: wt init $repo <url-or-local-checkout>"
+}
+
+# `git clone --bare` writes no fetch refspec, so `git fetch` silently updates
+# nothing and `origin/<branch>` never resolves. Without this line every later
+# command looks like it works but operates on stale refs.
+ensure_refspec() {
+	local repo="$1"
+	if [ -z "$(hub_git "$repo" config --get-all remote.origin.fetch || true)" ]; then
+		hub_git "$repo" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+		note "wt: set fetch refspec on $repo.git"
+	fi
+}
+
+# Resolve linked worktrees from their Git common directory, wherever they live.
+# Standalone checkouts fall back to their repository-root name; grouping folders
+# under WT_ROOT use the hub name when the folder itself is not a Git checkout.
+current_project() {
+  local cwd git_root common_dir common_name hub_dir wt_root relative repo
+  cwd="$(pwd -P 2>/dev/null)" || return 1
+
+  if git_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"; then
+    git_root="$(cd "$git_root" 2>/dev/null && pwd -P)" || return 1
+    common_dir="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [ -n "$common_dir" ]; then
+      common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P)" || common_dir=""
+      common_name="${common_dir##*/}"
+      case "$common_name" in
+        *.git)
+          repo="${common_name%.git}"
+          if [ -n "$repo" ] && [ -d "$(hub_of "$repo")" ]; then
+            hub_dir="$(cd "$(hub_of "$repo")" 2>/dev/null && pwd -P)" || hub_dir=""
+            if [ "$hub_dir" = "$common_dir" ]; then
+              printf '%s\n' "$repo"
+              return 0
+            fi
+          fi
+          ;;
+      esac
+    fi
+
+    wt_root="$(cd "$WT_ROOT" 2>/dev/null && pwd -P)" || wt_root=""
+    if [ -n "$wt_root" ]; then
+      case "$git_root" in
+        "$wt_root"/*)
+          relative="${git_root#"$wt_root"/}"
+          repo="${relative%%/*}"
+          if [ -d "$(hub_of "$repo")" ]; then
+            printf '%s\n' "$repo"
+            return 0
+          fi
+          ;;
+      esac
+    fi
+
+    repo="${git_root##*/}"
+    [ -n "$repo" ] || return 1
+    printf '%s\n' "$repo"
+    return 0
+  fi
+
+  # A project grouping folder can have a bare hub but no checkout at its root.
+  wt_root="$(cd "$WT_ROOT" 2>/dev/null && pwd -P)" || return 1
+  case "$cwd" in
+    "$wt_root"/*) relative="${cwd#"$wt_root"/}" ;;
+    *) return 1 ;;
+  esac
+  repo="${relative%%/*}"
+  [ -d "$(hub_of "$repo")" ] || return 1
+  printf '%s\n' "$repo"
+}
+
+# Hub names come first, followed by standalone project checkouts. The current
+# project is first so an empty-prefix completion starts with the local context.
+project_names() {
+  local prefix="${1:-}" scope="${2:-all}" current name hub dir existing
+  local -a names=()
+  current="$(current_project || true)"
+  if [ -n "$current" ] && [[ "$current" == "$prefix"* ]]; then
+    case "$scope" in
+      all) names+=("$current") ;;
+      hubs) [ -d "$(hub_of "$current")" ] && names+=("$current") ;;
+      sources) [ ! -d "$(hub_of "$current")" ] && names+=("$current") ;;
+    esac
+  fi
+  if [ "$scope" != sources ]; then
+    for hub in "$HUB_ROOT"/*.git; do
+      [ -d "$hub" ] || continue
+      name="$(basename "$hub" .git)"
+      [[ "$name" == "$prefix"* ]] || continue
+      for existing in "${names[@]}"; do [ "$existing" = "$name" ] && continue 2; done
+      names+=("$name")
+    done
+  fi
+  if [ "$scope" = hubs ]; then
+    printf '%s\n' "${names[@]}"
+    return 0
+  fi
+  for dir in "$WT_ROOT"/*; do
+    [ -d "$dir" ] && [ -e "$dir/.git" ] || continue
+    name="${dir##*/}"
+    [ "$scope" != sources ] || [ ! -d "$(hub_of "$name")" ] || continue
+    [[ "$name" == "$prefix"* ]] || continue
+    for existing in "${names[@]}"; do [ "$existing" = "$name" ] && continue 2; done
+    names+=("$name")
+  done
+  printf '%s\n' "${names[@]}"
+}
+
+worktree_names() {
+  local repo="$1" prefix="${2:-}" dir name
+  validate_component repo "$repo"
+
+  [ -d "$(hub_of "$repo")" ] || return 0
+  for dir in "$WT_ROOT/$repo"/*; do
+    [ -d "$dir" ] || continue
+    name="${dir##*/}"
+    [[ "$name" == "$prefix"* ]] && printf '%s\n' "$name"
+  done
+  return 0
+}
+
+cmd_complete() {
+  case "${1:-}" in
+    projects) project_names "${2:-}" "${3:-all}" ;;
+    worktrees) worktree_names "${2:-}" "${3:-}" ;;
+    current) current_project ;;
+    *) return 2 ;;
+  esac
+}
+
+usage() {
+  cat <<'EOF'
+usage: wt <command> [repo] [args]
+
+  wt init <repo> <url>          create bare hub at ~/agentic/<repo>.git
+  wt sync [repo]                fetch origin; defaults to the current project
+  wt sync --all                 fetch every hub
+  wt new <repo> <issue>         add worktree ~/projects/<repo>/<issue>
+  wt new <issue>                use the current project (inside a project folder)
+  wt new --repo <repo> <issue>  explicitly select a project
+  wt list [repo]                list current project, or all hubs outside one
+  wt rm [--force] <repo> <task>  remove worktree and delete its branch
+  wt rm [--force] <task>         use the current project
+  wt completion <fish|bash|zsh>  print shell completion source
+  wt prune [repo]               prune stale registrations; defaults to current project
+
+`wt rm --force` discards uncommitted changes in the selected worktree.
+`wt completion <shell>` prints the source for installation in that shell.
+
+Notes:
+  * Branch for a worktree defaults to its issue directory name. Override with
+    --branch; choose the base with --base.
+  * `wt rm` refuses to remove the worktree containing the current directory;
+    cd elsewhere first.
+  * Never uses --mirror: that maps remote branches onto local ones and makes
+    fetch refuse to update any branch checked out in a worktree.
+EOF
+}
+
+clone_bare() {
+	local url="$1" dest="$2" host=""
+
+	# `git clone` does not automatically use a token configured by `gh auth`.
+	# Install gh's host-scoped credential helper before cloning authenticated
+	# GitHub remotes; local paths and other hosts continue to use plain git.
+	if [[ "$url" =~ ^https?://([^/]+)/ ]]; then
+		host="${BASH_REMATCH[1]}"
+		if command -v gh >/dev/null 2>&1 && gh auth status --hostname "$host" >/dev/null 2>&1; then
+			gh auth setup-git --hostname "$host" >/dev/null
+		fi
+	fi
+
+	git clone --bare "$url" "$dest"
+}
+
+cmd_init() {
+	local repo="${1:-}" url="${2:-}"
+	[ -n "$repo" ] && [ -n "$url" ] || die "usage: wt init <repo> <url>"
+  validate_component repo "$repo"
+
+	[ -e "$(hub_of "$repo")" ] && die "hub already exists: $(hub_of "$repo")"
+	mkdir -p "$HUB_ROOT"
+	clone_bare "$url" "$(hub_of "$repo")" >&2
+	ensure_refspec "$repo"
+	# A fresh bare clone has no remote-tracking refs, so base detection and any
+	# `wt new` would have nothing to branch from until the first fetch.
+	hub_git "$repo" fetch --prune origin
+	note "wt: hub ready at $(hub_of "$repo")"
+}
+
+cmd_sync() {
+  if [ "${1:-}" = "--all" ]; then
+    local found=0 hub name
+    for hub in "$HUB_ROOT"/*.git; do
+      [ -d "$hub" ] || continue
+      found=1
+      name="$(basename "$hub" .git)"
+      ensure_refspec "$name"
+      cmd_sync "$name"
+    done
+    [ "$found" = 1 ] || die "no hubs in $HUB_ROOT"
+    return
+  fi
+  local repo="${1:-}"
+  [ -n "$repo" ] || repo="$(current_project || true)"
+  [ -n "$repo" ] || die "usage: wt sync <repo> | wt sync --all (or run inside a project folder)"
+  require_hub "$repo"
+  ensure_refspec "$repo"
+  hub_git "$repo" fetch --prune origin
+}
+
+default_base() {
+	local repo="$1" base
+	base="$(hub_git "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+	if [ -n "$base" ]; then printf '%s\n' "$base"; return; fi
+	for candidate in origin/main origin/master; do
+		if hub_git "$repo" rev-parse --verify --quiet "$candidate" >/dev/null; then
+			printf '%s\n' "$candidate"
+			return
+		fi
+	done
+	die "cannot determine default branch for '$repo' — pass a base explicitly"
+}
+
+cmd_new() {
+  local repo="" issue="" branch="" base="" repo_flag=0
+  local -a positional=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --branch) branch="${2:?--branch needs a value}"; shift 2 ;;
+      --base)   base="${2:?--base needs a value}";   shift 2 ;;
+      --repo)   repo="${2:?--repo needs a value}"; repo_flag=1; shift 2 ;;
+      --)       shift; while [ $# -gt 0 ]; do positional+=("$1"); shift; done; break ;;
+      -*)       die "unknown flag: $1" ;;
+      *)        positional+=("$1"); shift ;;
+    esac
+  done
+
+  if [ "$repo_flag" = 1 ]; then
+    [ "${#positional[@]}" = 1 ] || die "usage: wt new --repo <repo> <issue> [--branch B] [--base REF]"
+    issue="${positional[0]}"
+  elif [ "${#positional[@]}" = 2 ]; then
+    repo="${positional[0]}"
+    issue="${positional[1]}"
+  elif [ "${#positional[@]}" = 1 ]; then
+    repo="$(current_project || true)"
+    [ -n "$repo" ] || die "usage: wt new <repo> <issue> (or run inside a project folder and use: wt new <issue>)"
+    issue="${positional[0]}"
+  else
+    die "usage: wt new <repo> <issue> [--branch B] [--base REF] (or wt new <issue> inside a project)"
+  fi
+  require_hub "$repo"
+  ensure_refspec "$repo"
+  validate_component task "$issue"
+
+
+  local dir="$WT_ROOT/$repo/$issue"
+  if [ -e "$dir" ]; then die "already exists: $dir"; fi
+
+  # Reuse the branch if it already exists (resuming work); otherwise branch
+  # from the base. An issue dir like '361-storybook-fix' becomes branch
+  # '361-storybook-fix'.
+  [ -n "$branch" ] || branch="$issue"
+
+  # Validate before touching the filesystem, so a bad ref fails with a `wt:`
+  # message and leaves no half-created worktree registration behind.
+  if ! hub_git "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
+    hub_git "$repo" check-ref-format --branch "$branch" >/dev/null 2>&1 ||
+      die "invalid branch name: $branch"
+  fi
+  if [ -n "$base" ] && ! hub_git "$repo" rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+    die "base ref not found in hub: $base"
+  fi
+
+  if hub_git "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
+    note "wt: reusing existing branch $branch"
+    hub_git "$repo" worktree add "$dir" "$branch"
+  elif [ -n "$base" ]; then
+    hub_git "$repo" worktree add -b "$branch" "$dir" "$base"
+  else
+    hub_git "$repo" worktree add -b "$branch" "$dir" "$(default_base "$repo")"
+  fi
+  printf '%s\n' "$dir"
+}
+
+cmd_list() {
+  local repo="${1:-}" hub name
+  [ -n "$repo" ] || repo="$(current_project || true)"
+  if [ -n "$repo" ]; then
+    require_hub "$repo"
+    hub_git "$repo" worktree list
+    return
+  fi
+  for hub in "$HUB_ROOT"/*.git; do
+    [ -d "$hub" ] || continue
+    name="$(basename "$hub" .git)"
+    printf '\n== %s ==\n' "$name"
+    hub_git "$name" worktree list
+  done
+}
+
+cmd_rm() {
+  local repo="" issue="" branch="" force=0
+  local -a positional=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -f|--force) force=1; shift ;;
+      --) shift; while [ "$#" -gt 0 ]; do positional+=("$1"); shift; done; break ;;
+      -*) die "unknown flag: $1" ;;
+      *) positional+=("$1"); shift ;;
+    esac
+  done
+  if [ "${#positional[@]}" = 2 ]; then
+    repo="${positional[0]}"
+    issue="${positional[1]}"
+  elif [ "${#positional[@]}" = 1 ]; then
+    repo="$(current_project || true)"
+    [ -n "$repo" ] || die "usage: wt rm [--force] <repo> <task> (or run inside a project folder)"
+    issue="${positional[0]}"
+  else
+    die "usage: wt rm [--force] <repo> <task> (or wt rm [--force] <task> inside a project)"
+  fi
+  require_hub "$repo"
+  validate_component task "$issue"
+
+  local current_dir target_dir
+  local dir="$WT_ROOT/$repo/$issue"
+  [ -e "$dir" ] || die "no such worktree: $dir"
+  current_dir="$(pwd -P 2>/dev/null)" || die "current directory is unavailable; cd to an existing directory before removing worktrees"
+  target_dir="$(cd "$dir" 2>/dev/null && pwd -P)" || die "cannot resolve worktree path: $dir"
+  case "$current_dir" in
+    "$target_dir"|"$target_dir"/*) die "cannot remove the worktree containing the current directory; cd elsewhere first" ;;
+  esac
+
+  # Record the branch before removal; after the worktree is gone the branch
+  # is no longer 'checked out' and becomes deletable.
+  branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+
+  if [ "$force" != 1 ] && [ -n "$(git -C "$dir" status --porcelain 2>/dev/null || true)" ]; then
+    die "$dir has uncommitted changes — commit, stash, or remove them with --force"
+  fi
+
+  if [ "$force" = 1 ]; then
+    hub_git "$repo" worktree remove --force "$dir"
+  else
+    hub_git "$repo" worktree remove "$dir"
+  fi
+
+  # Detached HEAD (or already-merged) leaves nothing safe to delete.
+  if [ -n "$branch" ] && [ "$branch" != "HEAD" ]; then
+    if hub_git "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
+      hub_git "$repo" branch -D "$branch"
+      note "wt: deleted branch $branch"
+    fi
+  fi
+  rmdir "$WT_ROOT/$repo" 2>/dev/null || true
+}
+
+cmd_prune() {
+  local repo="${1:-}"
+  [ -n "$repo" ] || repo="$(current_project || true)"
+  [ -n "$repo" ] || die "usage: wt prune <repo> (or run inside a project folder)"
+  require_hub "$repo"
+  hub_git "$repo" worktree prune
+}
+cmd_completion() {
+  local shell="${1:-}" script_path="${BASH_SOURCE[0]}" script_dir target asset
+  [ "$#" = 1 ] || die "usage: wt completion <fish|bash|zsh>"
+  case "$shell" in
+    fish|bash) asset="wt.$shell" ;;
+    zsh) asset="_wt" ;;
+    *) die "unsupported shell: $shell (choose fish, bash, or zsh)" ;;
+  esac
+  case "$script_path" in
+    /*) ;;
+    *) script_path="$PWD/$script_path" ;;
+  esac
+  while [ -L "$script_path" ]; do
+    script_dir="$(cd -P "$(dirname "$script_path")" 2>/dev/null && pwd)" || die "cannot resolve wt script directory"
+    target="$(readlink "$script_path")" || die "cannot resolve wt symlink"
+    case "$target" in
+      /*) script_path="$target" ;;
+      *) script_path="$script_dir/$target" ;;
+    esac
+  done
+  script_dir="$(cd -P "$(dirname "$script_path")" 2>/dev/null && pwd)" || die "cannot resolve wt script directory"
+  target="$script_dir/../completions/$asset"
+  [ -r "$target" ] || die "completion source not found: $target"
+  cat "$target"
+}
+
+
+case "${1:-}" in
+  init)  shift; cmd_init  "$@" ;;
+  sync)  shift; cmd_sync  "$@" ;;
+  new)   shift; cmd_new   "$@" ;;
+  list)  shift; cmd_list  "$@" ;;
+  rm)    shift; cmd_rm    "$@" ;;
+  prune) shift; cmd_prune "$@" ;;
+  completion) shift; cmd_completion "$@" ;;
+  __complete) shift; cmd_complete "$@" ;;
+  ''|-h|--help|help) usage ;;
+  *) die "unknown command: $1 (try: wt --help)" ;;
+esac
