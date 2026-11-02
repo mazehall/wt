@@ -12,12 +12,18 @@ if [ -d "$src/.git" ] && [ -z "${WT_NO_UPDATE:-}" ]; then
     echo "install: git pull failed; linking the current checkout as is" >&2
 fi
 
-# First writable directory that is already on PATH, in order of preference.
+# Replace an existing wt symlink in place; otherwise use the first writable
+# directory already on PATH, in order of preference.
 bindir=""
-for d in "$HOME/.local/bin" "$HOME/bin" /opt/homebrew/bin /usr/local/bin; do
-  case ":$PATH:" in *":$d:"*) ;; *) continue ;; esac
-  if [ -d "$d" ] && [ -w "$d" ]; then bindir="$d"; break; fi
-done
+existing="$(command -v wt || true)"
+if [ -n "$existing" ] && [ -L "$existing" ]; then
+  bindir="$(dirname "$existing")"
+else
+  for d in "$HOME/.local/bin" "$HOME/bin" /opt/homebrew/bin /usr/local/bin; do
+    case ":$PATH:" in *":$d:"*) ;; *) continue ;; esac
+    if [ -d "$d" ] && [ -w "$d" ]; then bindir="$d"; break; fi
+  done
+fi
 if [ -z "$bindir" ]; then
   bindir="$HOME/.local/bin"
   mkdir -p "$bindir"
