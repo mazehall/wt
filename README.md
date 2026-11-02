@@ -11,14 +11,15 @@ Set `WT_HUB_ROOT` or `WT_ROOT` to change either location. The tool is a Bash scr
 
 ## Install
 
-Clone the repository (private, so use `gh` or an SSH/HTTPS remote you have access to) and run the installer:
+Requires `curl`, `tar`, and `git`. Install `wt` with:
 
 ```bash
-gh repo clone mazehall/wt ~/.local/share/wt
-~/.local/share/wt/install.sh
+curl -fsSL https://raw.githubusercontent.com/mazehall/wt/main/install.sh | bash
 ```
 
-`install.sh` replaces an existing `wt` symlink in place. Otherwise it links `bin/wt` into the first directory on `PATH` among `~/.local/bin`, `~/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. If none is on `PATH`, it creates `~/.local/bin` and prints the line to add to your shell profile. It runs `git pull --ff-only` first, so rerunning it updates `wt`; set `WT_NO_UPDATE=1` to skip that. The link points into the checkout, so keep it in place.
+While the repository is private, export a token with read access and pass it on: `export GITHUB_TOKEN=<token>; curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://raw.githubusercontent.com/mazehall/wt/main/install.sh | bash`.
+
+The installer downloads the repository archive into `~/.local/share/wt` and links `bin/wt` into the directory of an existing `wt` symlink, or else the first writable directory on `PATH` among `~/.local/bin`, `~/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. If none is on `PATH`, it creates `~/.local/bin` and prints the line to add to your shell profile. Rerun it to update. Set `WT_HOME` to change the install location and `WT_REF` to install another branch or tag.
 
 `wt completion <shell>` prints completion definitions for Fish, Bash, or Zsh. Install them with:
 
