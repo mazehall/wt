@@ -1,16 +1,41 @@
 #!/usr/bin/env bash
-# Link bin/wt from this checkout into a directory on PATH.
-# Usage: install.sh   (set WT_NO_UPDATE=1 to skip git pull)
+# Install wt: download the repository snapshot, link bin/wt into PATH.
+#   curl -fsSL https://raw.githubusercontent.com/mazehall/wt/main/install.sh | bash
+# Env: GITHUB_TOKEN (only while the repository is private), WT_REF (default main),
+#      WT_HOME (default ~/.local/share/wt). Rerun to update.
 set -euo pipefail
 
-src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-target="$src/bin/wt"
-[ -x "$target" ] || { echo "install: $target missing or not executable" >&2; exit 1; }
+repo="mazehall/wt"
+ref="${WT_REF:-main}"
+home="${WT_HOME:-$HOME/.local/share/wt}"
 
-if [ -d "$src/.git" ] && [ -z "${WT_NO_UPDATE:-}" ]; then
-  git -C "$src" pull --ff-only --quiet ||
-    echo "install: git pull failed; linking the current checkout as is" >&2
-fi
+die() { echo "install: $*" >&2; exit 1; }
+command -v curl >/dev/null 2>&1 || die "curl is required"
+command -v tar >/dev/null 2>&1 || die "tar is required"
+command -v git >/dev/null 2>&1 || die "wt needs git; install it and rerun"
+
+fetch() { # url dest
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -o "$2" "$1"
+  else
+    curl -fsSL -o "$2" "$1"
+  fi
+}
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fetch "https://api.github.com/repos/$repo/tarball/$ref" "$tmp/src.tgz" ||
+  die "download failed (private repository? set GITHUB_TOKEN)"
+mkdir "$tmp/src"
+tar -xzf "$tmp/src.tgz" -C "$tmp/src" --strip-components=1
+[ -f "$tmp/src/bin/wt" ] || die "archive has no bin/wt"
+
+rm -rf "$home"
+mkdir -p "$(dirname "$home")"
+mv "$tmp/src" "$home"
+target="$home/bin/wt"
+chmod 755 "$target"
+echo "install: fetched $repo@$ref into $home"
 
 # Replace an existing wt symlink in place; otherwise use the first writable
 # directory already on PATH, in order of preference.
@@ -33,8 +58,7 @@ fi
 
 dest="$bindir/wt"
 if [ -e "$dest" ] && [ ! -L "$dest" ]; then
-  echo "install: $dest exists and is not a symlink; remove it or edit PATH" >&2
-  exit 1
+  die "$dest exists and is not a symlink; remove it or edit PATH"
 fi
 ln -sfn "$target" "$dest"
 echo "install: $dest -> $target"
