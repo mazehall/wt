@@ -59,4 +59,13 @@ test ! -e "$WT_ROOT/valid/dirty-long" || fail 'wt rm --force left the dirty work
 printf 'dirty\n' >> "$WT_ROOT/valid/dirty-short/file.txt"
 "$wt" rm -f valid dirty-short >/dev/null 2>&1
 test ! -e "$WT_ROOT/valid/dirty-short" || fail 'wt rm -f left the dirty worktree'
+
+# Completion queries run outside a project too. On Bash 3.2 an empty array
+# expansion under `set -u` aborts, which used to leave completions empty.
+completion="$(
+  cd "$tmp"
+  "$wt" __complete projects "" hubs
+)"
+[ "$completion" = "$(printf 'sample\nvalid')" ] || fail 'completion query outside a project'
+printf 'PASS: completion queries work outside a project\n'
 printf 'PASS: repo and task arguments stay within configured roots\n'
