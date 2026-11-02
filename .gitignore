@@ -12,3 +12,5 @@
 !tests/
 !tests/path-components.sh
 !LICENSE
+!skills/
+!skills/**
