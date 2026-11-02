@@ -17,9 +17,13 @@ Requires `curl`, `tar`, and `git`. Install `wt` with:
 curl -fsSL https://raw.githubusercontent.com/mazehall/wt/main/install.sh | bash
 ```
 
-The installer downloads the repository archive into `~/.local/share/wt` and links `bin/wt` into the directory of an existing `wt` symlink, or else the first writable directory on `PATH` among `~/.local/bin`, `~/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. If none is on `PATH`, it creates `~/.local/bin` and prints the line to add to your shell profile. Rerun it to update. Set `WT_HOME` to change the install location and `WT_REF` to install another branch or tag.
+The installer downloads the repository archive into `~/.local/share/wt` and links `bin/wt` into the directory of an existing `wt` symlink, or else the first writable directory on `PATH` among `~/.local/bin`, `~/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. If none is on `PATH`, it creates `~/.local/bin` and prints the line to add to your shell profile. Rerun it to update. Set `WT_HOME` to change the install location and `WT_REF` to install another branch or tag. Pass them to `bash` on the right side of the pipe, not to `curl`:
 
-`wt completion <shell>` prints completion definitions for Fish, Bash, or Zsh. Install them with:
+```bash
+curl -fsSL https://raw.githubusercontent.com/mazehall/wt/main/install.sh | WT_REF=my-branch bash  # replace my-branch
+```
+
+`wt completion <shell>` prints completion definitions for Fish, Bash, or Zsh. Run the command for your shell once; only the lines marked `~/.zshrc` belong in your shell startup file.
 
 ```sh
 # Fish
@@ -29,12 +33,16 @@ wt completion fish > ~/.config/fish/completions/wt.fish
 # Bash (source ~/.bash_completion from your shell startup file if not already done)
 wt completion bash >> ~/.bash_completion
 
-# Zsh (add these lines to ~/.zshrc once)
+# Zsh: generate the completion once
 mkdir -p ~/.zfunc
 wt completion zsh > ~/.zfunc/_wt
+
+# Zsh: add these lines to ~/.zshrc, before any existing compinit call
 fpath=(~/.zfunc $fpath)
 autoload -Uz compinit && compinit
 ```
+
+If `~/.zshrc` already initializes completion, add only the `fpath` line before that `compinit` call and skip the extra `autoload`/`compinit` line. Rerun the `wt completion ...` command after updating `wt` (for Bash, replace the old block instead of appending a second copy); the installer updates the program but not generated completion files.
 
 Restart the shell or reload its completion setup after installing.
 
