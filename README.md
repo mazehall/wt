@@ -56,7 +56,7 @@ wt new --repo <repo> <task>       Select a project explicitly
 wt sync [<repo>]                  Fetch updates for a hub
 wt sync --all                     Fetch every hub
 wt list [<repo>]                  List registered worktrees
-wt rm [--force] <repo> <task>     Remove a clean worktree and its branch
+wt rm [--force] <repo> <task>     Remove a clean worktree and its local branch if merged
 wt rm [--force] <task>            Remove a worktree for the current project
 wt completion <fish|bash|zsh>     Print shell completion source
 wt prune [<repo>]                 Prune stale worktree registrations
@@ -72,6 +72,7 @@ The task name is one path component; use `--branch` to choose a branch name that
 - `wt` sets the bare clone's fetch refspec, which `git clone --bare` does not set by default.
 - It avoids `git clone --mirror`, which maps remote refs onto local branch refs and conflicts with checked-out worktree branches.
 - `wt rm --force` discards uncommitted changes in the selected worktree.
+- `wt` never deletes remote branches or refs. `wt rm` removes the local worktree and deletes its local branch only if fully merged (`git branch -d`); the hub default branch and unmerged branches are kept. Read-only files (envtest, Go module cache) are made writable before removal.
 - `wt init` accepts a remote URL or a local checkout path; the source checkout is left untouched.
 
 ## Testing

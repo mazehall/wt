@@ -23,6 +23,7 @@ Manage task worktrees with `wt`. Layout:
 - Inside a managed worktree or project directory, the repo can be omitted: `wt new <task>`, `wt rm <task>`, `wt list`, `wt sync`, `wt prune`.
 - `<task>` is a single path component. Use `--branch <name>` if the branch name must differ from the task directory name.
 - Base ref: `--base <ref>`. Default is `origin/HEAD`, then `origin/main`, then `origin/master`.
+- `wt` never deletes remote branches or refs. `wt rm` removes only the local worktree and, if fully merged, the local hub branch (never the hub default branch). Ending local work must not touch the remote.
 - Never use `wt rm --force` without explicit user confirmation: it discards uncommitted changes.
 - `wt rm` refuses to remove the worktree that contains the current directory. `cd` elsewhere first.
 - Before removing, check for unpushed work (`git -C "$dir" status`, `git -C "$dir" log @{u}..`). Report findings rather than deleting silently.
@@ -34,7 +35,7 @@ wt new <repo> <task> [--branch <b>] [--base <ref>]   create worktree, print its 
 wt new <task>                                        same, repo inferred from current project
 wt list [<repo>]                                     list registered worktrees
 wt sync [<repo>]                                     fetch updates for a hub
-wt rm [--force] <repo> <task>                        remove clean worktree and its branch
+wt rm [--force] <repo> <task>                        remove clean worktree and its local branch if merged
 wt rm [--force] <task>                               same, repo inferred
 wt prune [<repo>]                                    prune stale worktree registrations
 ```
