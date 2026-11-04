@@ -179,7 +179,7 @@ usage: wt <command> [repo] [args]
   wt new <issue>                use the current project (inside a project folder)
   wt new --repo <repo> <issue>  explicitly select a project
   wt list [repo]                list current project, or all hubs outside one
-  wt rm [--force] <repo> <task>  remove worktree and delete its branch
+  wt rm [--force] <repo> <task>  remove worktree; delete its local branch if merged
   wt rm [--force] <task>         use the current project
   wt completion <fish|bash|zsh>  print shell completion source
   wt prune [repo]               prune stale registrations; defaults to current project
@@ -380,17 +380,29 @@ cmd_rm() {
     die "$dir has uncommitted changes — commit, stash, or remove them with --force"
   fi
 
+  # Tool caches (envtest, Go modules) are often read-only; git cannot unlink them.
+  [ -L "$dir" ] || chmod -R u+w -- "$dir" 2>/dev/null || true
+
   if [ "$force" = 1 ]; then
     hub_git "$repo" worktree remove --force "$dir"
   else
     hub_git "$repo" worktree remove "$dir"
   fi
 
-  # Detached HEAD (or already-merged) leaves nothing safe to delete.
+  # Local cleanup only: wt never deletes remote branches. Detached HEAD, the
+  # hub's default branch, and branches not merged into their upstream (or the
+  # hub HEAD) are kept.
   if [ -n "$branch" ] && [ "$branch" != "HEAD" ]; then
-    if hub_git "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
-      hub_git "$repo" branch -D "$branch"
-      note "wt: deleted branch $branch"
+    local default_branch
+    default_branch="$(hub_git "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    if [ "$branch" = "$default_branch" ]; then
+      note "wt: kept branch $branch (hub default branch)"
+    elif hub_git "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
+      if hub_git "$repo" branch -d "$branch" >/dev/null 2>&1; then
+        note "wt: deleted local branch $branch"
+      else
+        note "wt: kept branch $branch (not fully merged; delete manually with git branch -D)"
+      fi
     fi
   fi
   rmdir "$WT_ROOT/$repo" 2>/dev/null || true
