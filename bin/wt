@@ -173,13 +173,13 @@ usage() {
 usage: wt <command> [repo] [args]
 
   wt init <repo> <url>          create bare hub at ~/agentic/<repo>.git
-  wt sync [repo]                fetch origin; defaults to the current project
-  wt sync --all                 fetch every hub
+  wt sync [repo]                fetch origin and safely advance the hub default branch
+  wt sync --all                 sync every hub
   wt new <repo> <issue>         add worktree ~/projects/<repo>/<issue>
   wt new <issue>                use the current project (inside a project folder)
   wt new --repo <repo> <issue>  explicitly select a project
   wt list [repo]                list current project, or all hubs outside one
-  wt rm [--force] <repo> <task>  remove worktree and delete its branch
+  wt rm [--force] <repo> <task>  remove worktree; delete its local branch if merged
   wt rm [--force] <task>         use the current project
   wt completion <fish|bash|zsh>  print shell completion source
   wt prune [repo]               prune stale registrations; defaults to current project
@@ -247,6 +247,41 @@ cmd_sync() {
   require_hub "$repo"
   ensure_refspec "$repo"
   hub_git "$repo" fetch --prune origin
+
+  # Never move a checked-out branch behind its worktree/index, or discard local commits.
+  if [ "$(hub_git "$repo" rev-parse --is-bare-repository)" != true ]; then
+    note "wt: $repo: fetched only (hub is not bare)"
+    return
+  fi
+  local ref branch old new worktrees line
+  ref="$(hub_git "$repo" symbolic-ref --quiet HEAD || true)"
+  case "$ref" in
+    refs/heads/*) branch="${ref#refs/heads/}" ;;
+    *) note "wt: $repo: fetched only (hub HEAD is detached)"; return ;;
+  esac
+  old="$(hub_git "$repo" rev-parse --verify --quiet "$ref" || true)"
+  new="$(hub_git "$repo" rev-parse --verify --quiet "refs/remotes/origin/$branch" || true)"
+  if [ -z "$old" ] || [ -z "$new" ]; then
+    note "wt: $repo: kept $branch (local branch or origin/$branch is missing)"
+    return
+  fi
+  if [ "$old" = "$new" ]; then
+    note "wt: $repo: $branch is up to date with origin/$branch"
+    return
+  fi
+  worktrees="$(hub_git "$repo" worktree list --porcelain)"
+  while IFS= read -r line; do
+    if [ "$line" = "branch $ref" ]; then
+      note "wt: $repo: kept $branch (checked out in a worktree; update it there with git merge --ff-only origin/$branch when ready)"
+      return
+    fi
+  done <<< "$worktrees"
+  if ! hub_git "$repo" merge-base --is-ancestor "$old" "$new"; then
+    note "wt: $repo: kept $branch (contains local-only commits; cannot fast-forward to origin/$branch)"
+    return
+  fi
+  hub_git "$repo" update-ref -m "wt sync: fast-forward to origin/$branch" "$ref" "$new" "$old"
+  note "wt: $repo: fast-forwarded $branch to origin/$branch ($old -> $new)"
 }
 
 default_base() {
@@ -380,17 +415,29 @@ cmd_rm() {
     die "$dir has uncommitted changes — commit, stash, or remove them with --force"
   fi
 
+  # Tool caches (envtest, Go modules) are often read-only; git cannot unlink them.
+  [ -L "$dir" ] || chmod -R u+w -- "$dir" 2>/dev/null || true
+
   if [ "$force" = 1 ]; then
     hub_git "$repo" worktree remove --force "$dir"
   else
     hub_git "$repo" worktree remove "$dir"
   fi
 
-  # Detached HEAD (or already-merged) leaves nothing safe to delete.
+  # Local cleanup only: wt never deletes remote branches. Detached HEAD, the
+  # hub's default branch, and branches not merged into their upstream (or the
+  # hub HEAD) are kept.
   if [ -n "$branch" ] && [ "$branch" != "HEAD" ]; then
-    if hub_git "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
-      hub_git "$repo" branch -D "$branch"
-      note "wt: deleted branch $branch"
+    local default_branch
+    default_branch="$(hub_git "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    if [ "$branch" = "$default_branch" ]; then
+      note "wt: kept branch $branch (hub default branch)"
+    elif hub_git "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
+      if hub_git "$repo" branch -d "$branch" >/dev/null 2>&1; then
+        note "wt: deleted local branch $branch"
+      else
+        note "wt: kept branch $branch (not fully merged; delete manually with git branch -D)"
+      fi
     fi
   fi
   rmdir "$WT_ROOT/$repo" 2>/dev/null || true

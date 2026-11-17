@@ -53,10 +53,10 @@ wt init <repo> <url-or-checkout>  Create a bare hub and fetch its refs
 wt new <repo> <task>              Create a task worktree
 wt new <task>                     Create a worktree for the current project
 wt new --repo <repo> <task>       Select a project explicitly
-wt sync [<repo>]                  Fetch updates for a hub
-wt sync --all                     Fetch every hub
+wt sync [<repo>]                  Fetch and safely advance the hub default branch
+wt sync --all                     Sync every hub
 wt list [<repo>]                  List registered worktrees
-wt rm [--force] <repo> <task>     Remove a clean worktree and its branch
+wt rm [--force] <repo> <task>     Remove a clean worktree and its local branch if merged
 wt rm [--force] <task>            Remove a worktree for the current project
 wt completion <fish|bash|zsh>     Print shell completion source
 wt prune [<repo>]                 Prune stale worktree registrations
@@ -66,17 +66,23 @@ Inside a managed worktree, `wt new <task>`, `wt rm <task>`, `wt sync`, `wt list`
 
 The task name is one path component; use `--branch` to choose a branch name that differs from the task directory. `--base` selects a base ref; otherwise `wt` uses `origin/HEAD`, then `origin/main` or `origin/master`.
 
+`wt sync` fetches and prunes origin's remote-tracking refs, then fast-forwards the hub's local default branch (usually `main`) to the same-named origin branch. It never merges or rebases task branches. If the default branch is checked out in a linked worktree, contains local-only commits, or has no remote counterpart, sync leaves it unchanged and explains why. For a checked-out default branch, preserve any pending work and run `git merge --ff-only origin/main` in that worktree when ready (substitute its branch name).
+
+Keeping the hub default branch current lets `wt rm` recognize merged branches after their remote branches have been deleted. Squash/rebase merges can still require manual review because Git's ancestry check does not recognize rewritten commits.
+
 ## Design notes
 
 - Bare hubs share one Git object store among all task worktrees.
 - `wt` sets the bare clone's fetch refspec, which `git clone --bare` does not set by default.
 - It avoids `git clone --mirror`, which maps remote refs onto local branch refs and conflicts with checked-out worktree branches.
 - `wt rm --force` discards uncommitted changes in the selected worktree.
+- `wt` never deletes remote branches or refs. `wt rm` removes the local worktree and deletes its local branch only if fully merged (`git branch -d`); the hub default branch and unmerged branches are kept. Read-only files (envtest, Go module cache) are made writable before removal.
 - `wt init` accepts a remote URL or a local checkout path; the source checkout is left untouched.
 
 ## Testing
 
 - `tests/path-components.sh` checks `wt` directly against temporary hubs and worktrees. Run it on the host.
+- `tests/sync.sh` checks safe fast-forwards, merged-branch cleanup, `--all`, and preservation of checked-out branches and local-only work in temporary local repositories. Run it on the host with `bash tests/sync.sh`; set `WT_TEST_BIN` to test an installed copy.
 - `tests/completion-zsh.sh` checks the zsh completion candidates without an interactive shell. It skips when zsh is not installed.
 - `tests/install-docker.sh` installs `wt` into fresh Ubuntu containers, as root and as a non-root user, then checks the one-liner, `wt init`/`wt new`, completions, and updates. It needs Docker. It installs from the pushed archive (`WT_REF`, default `main`), so push before running it. A run takes about a minute.
 
