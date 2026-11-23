@@ -68,7 +68,7 @@ The task name is one path component; use `--branch` to choose a branch name that
 
 `wt sync` fetches and prunes origin's remote-tracking refs, then fast-forwards the hub's local default branch (usually `main`) to the same-named origin branch. It never merges or rebases task branches. If the default branch is checked out in a linked worktree, contains local-only commits, or has no remote counterpart, sync leaves it unchanged and explains why. For a checked-out default branch, preserve any pending work and run `git merge --ff-only origin/main` in that worktree when ready (substitute its branch name).
 
-Keeping the hub default branch current lets `wt rm` recognize merged branches after their remote branches have been deleted. Squash/rebase merges can still require manual review because Git's ancestry check does not recognize rewritten commits.
+Keeping the hub default branch current lets `wt rm` recognize merged branches after their remote branches have been deleted. Squash and rebase merges are also recognized: if the branch's content is already in the hub default branch (or `origin/<default>`), the branch is deleted even though its SHAs differ.
 
 ## Design notes
 
@@ -76,7 +76,7 @@ Keeping the hub default branch current lets `wt rm` recognize merged branches af
 - `wt` sets the bare clone's fetch refspec, which `git clone --bare` does not set by default.
 - It avoids `git clone --mirror`, which maps remote refs onto local branch refs and conflicts with checked-out worktree branches.
 - `wt rm --force` discards uncommitted changes in the selected worktree.
-- `wt` never deletes remote branches or refs. `wt rm` removes the local worktree and deletes its local branch only if fully merged (`git branch -d`); the hub default branch and unmerged branches are kept. Read-only files (envtest, Go module cache) are made writable before removal.
+- `wt` never deletes remote branches or refs. `wt rm` removes the local worktree and deletes its local branch only if fully merged (`git branch -d`) or its content is already in the default branch (squash/rebase merge); the hub default branch and unmerged branches are kept. Read-only files (envtest, Go module cache) are made writable before removal.
 - `wt init` accepts a remote URL or a local checkout path; the source checkout is left untouched.
 
 ## Testing
