@@ -452,12 +452,21 @@ cmd_rm() {
         note "wt: deleted local branch $branch"
       else
         local base merged_into=""
-        for base in "refs/heads/$default_branch" "refs/remotes/origin/$default_branch"; do
-          if [ -n "$default_branch" ] && branch_content_in_base "$repo" "$branch" "$base"; then
-            merged_into="$base"
-            break
-          fi
-        done
+        # Reachable from another remote branch (e.g. a release branch that is
+        # not the hub HEAD): the commits live on there, nothing is lost.
+        merged_into="$(hub_git "$repo" for-each-ref --contains "refs/heads/$branch" \
+          --format='%(refname)' refs/remotes 2>/dev/null |
+          grep -v -e "^refs/remotes/[^/]*/$branch\$" -e '/HEAD$' | head -n 1 || true)"
+        if [ -z "$merged_into" ]; then
+          # Rewritten history (squash/rebase merge) into the default branches.
+          for base in "refs/heads/$default_branch" "refs/remotes/origin/$default_branch" \
+            "$(hub_git "$repo" symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null || true)"; do
+            if [ -n "$base" ] && branch_content_in_base "$repo" "$branch" "$base"; then
+              merged_into="$base"
+              break
+            fi
+          done
+        fi
         if [ -n "$merged_into" ] && hub_git "$repo" branch -D "$branch" >/dev/null 2>&1; then
           note "wt: deleted local branch $branch (content already in ${merged_into#refs/})"
         else
