@@ -77,6 +77,12 @@ before="$(git --git-dir="$tmp/origin.git" for-each-ref)"
 git --git-dir="$hub" rev-parse --verify --quiet refs/heads/viarelease >/dev/null \
   && fail 'branch contained in remote release branch was kept'
 
+# wt sync follows a changed remote default branch instead of the stale hub HEAD.
+git --git-dir="$tmp/origin.git" symbolic-ref HEAD refs/heads/release/v2
+"$wt" sync r >/dev/null 2>&1 || fail 'wt sync failed'
+test "$(git --git-dir="$hub" symbolic-ref refs/remotes/origin/HEAD)" = refs/remotes/origin/release/v2 \
+  || fail 'wt sync did not refresh origin/HEAD'
+
 after="$(git --git-dir="$tmp/origin.git" for-each-ref)"
 test "$before" = "$after" || fail 'remote refs changed'
 
