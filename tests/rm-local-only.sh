@@ -32,7 +32,9 @@ hub="$WT_HUB_ROOT/r.git"
 mkdir -p "$WT_ROOT/r/merged/ro"
 touch "$WT_ROOT/r/merged/ro/f"
 chmod -R a-w "$WT_ROOT/r/merged/ro"
-git -C "$WT_ROOT/r/unmerged" commit -q --allow-empty -m unmerged-work
+echo u > "$WT_ROOT/r/unmerged/u.txt"
+git -C "$WT_ROOT/r/unmerged" add u.txt
+git -C "$WT_ROOT/r/unmerged" commit -q -m unmerged-work
 
 before="$(git --git-dir="$tmp/origin.git" for-each-ref)"
 cd "$tmp"
@@ -45,6 +47,23 @@ git --git-dir="$hub" rev-parse --verify --quiet refs/heads/merged >/dev/null \
 "$wt" rm --force r unmerged >/dev/null 2>&1 || fail 'wt rm failed for unmerged worktree'
 git --git-dir="$hub" rev-parse --verify --quiet refs/heads/unmerged >/dev/null \
   || fail 'unmerged local branch was deleted'
+
+# Squash-merged branch: content lands in main with a different SHA; must be deleted.
+"$wt" new r squashed --base origin/main >/dev/null 2>&1
+echo a > "$WT_ROOT/r/squashed/a.txt"
+git -C "$WT_ROOT/r/squashed" add a.txt
+git -C "$WT_ROOT/r/squashed" commit -q -m feat
+git -C "$tmp/source" fetch -q origin
+git -C "$tmp/source" checkout -q main
+echo a > "$tmp/source/a.txt"
+git -C "$tmp/source" add a.txt
+git -C "$tmp/source" commit -q -m "squash feat"
+git -C "$tmp/source" push -q origin main
+git --git-dir="$hub" fetch -q origin main:main 2>/dev/null || git --git-dir="$hub" fetch -q origin
+before="$(git --git-dir="$tmp/origin.git" for-each-ref)"
+"$wt" rm r squashed >/dev/null 2>&1 || fail 'wt rm failed for squashed worktree'
+git --git-dir="$hub" rev-parse --verify --quiet refs/heads/squashed >/dev/null \
+  && fail 'squash-merged local branch was kept'
 
 after="$(git --git-dir="$tmp/origin.git" for-each-ref)"
 test "$before" = "$after" || fail 'remote refs changed'

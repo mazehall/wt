@@ -374,6 +374,21 @@ cmd_list() {
   done
 }
 
+# True when every change on <branch> is already contained in <base>, even if the
+# commits were rewritten (rebase merge: all commits patch-equivalent; squash
+# merge: merging the branch into base yields base's own tree).
+branch_content_in_base() {
+  local repo="$1" branch="$2" base="$3" merged_tree base_tree
+  hub_git "$repo" rev-parse --verify --quiet "$base^{commit}" >/dev/null || return 1
+  if ! hub_git "$repo" cherry "$base" "refs/heads/$branch" 2>/dev/null | grep -q '^+'; then
+    return 0
+  fi
+  merged_tree="$(hub_git "$repo" merge-tree --write-tree "$base" "refs/heads/$branch" 2>/dev/null)" || return 1
+  merged_tree="${merged_tree%%$'\n'*}"
+  base_tree="$(hub_git "$repo" rev-parse "$base^{tree}" 2>/dev/null)" || return 1
+  [ "$merged_tree" = "$base_tree" ]
+}
+
 cmd_rm() {
   local repo="" issue="" branch="" force=0
   local -a positional=()
@@ -436,7 +451,18 @@ cmd_rm() {
       if hub_git "$repo" branch -d "$branch" >/dev/null 2>&1; then
         note "wt: deleted local branch $branch"
       else
-        note "wt: kept branch $branch (not fully merged; delete manually with git branch -D)"
+        local base merged_into=""
+        for base in "refs/heads/$default_branch" "refs/remotes/origin/$default_branch"; do
+          if [ -n "$default_branch" ] && branch_content_in_base "$repo" "$branch" "$base"; then
+            merged_into="$base"
+            break
+          fi
+        done
+        if [ -n "$merged_into" ] && hub_git "$repo" branch -D "$branch" >/dev/null 2>&1; then
+          note "wt: deleted local branch $branch (content already in ${merged_into#refs/})"
+        else
+          note "wt: kept branch $branch (not fully merged; delete manually with git branch -D)"
+        fi
       fi
     fi
   fi
