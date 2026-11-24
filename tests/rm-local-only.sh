@@ -65,6 +65,24 @@ before="$(git --git-dir="$tmp/origin.git" for-each-ref)"
 git --git-dir="$hub" rev-parse --verify --quiet refs/heads/squashed >/dev/null \
   && fail 'squash-merged local branch was kept'
 
+# Branch contained in another remote branch (not the hub HEAD) is safe to delete.
+"$wt" new r viarelease --base origin/main >/dev/null 2>&1
+echo r > "$WT_ROOT/r/viarelease/r.txt"
+git -C "$WT_ROOT/r/viarelease" add r.txt
+git -C "$WT_ROOT/r/viarelease" commit -q -m rel
+git -C "$WT_ROOT/r/viarelease" push -q origin HEAD:refs/heads/release/v2
+git --git-dir="$hub" fetch -q origin
+before="$(git --git-dir="$tmp/origin.git" for-each-ref)"
+"$wt" rm r viarelease >/dev/null 2>&1 || fail 'wt rm failed for viarelease worktree'
+git --git-dir="$hub" rev-parse --verify --quiet refs/heads/viarelease >/dev/null \
+  && fail 'branch contained in remote release branch was kept'
+
+# wt sync follows a changed remote default branch instead of the stale hub HEAD.
+git --git-dir="$tmp/origin.git" symbolic-ref HEAD refs/heads/release/v2
+"$wt" sync r >/dev/null 2>&1 || fail 'wt sync failed'
+test "$(git --git-dir="$hub" symbolic-ref refs/remotes/origin/HEAD)" = refs/remotes/origin/release/v2 \
+  || fail 'wt sync did not refresh origin/HEAD'
+
 after="$(git --git-dir="$tmp/origin.git" for-each-ref)"
 test "$before" = "$after" || fail 'remote refs changed'
 

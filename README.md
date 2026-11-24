@@ -68,7 +68,7 @@ The task name is one path component; use `--branch` to choose a branch name that
 
 `wt sync` fetches and prunes origin's remote-tracking refs, then fast-forwards the hub's local default branch (usually `main`) to the same-named origin branch. It never merges or rebases task branches. If the default branch is checked out in a linked worktree, contains local-only commits, or has no remote counterpart, sync leaves it unchanged and explains why. For a checked-out default branch, preserve any pending work and run `git merge --ff-only origin/main` in that worktree when ready (substitute its branch name).
 
-Keeping the hub default branch current lets `wt rm` recognize merged branches after their remote branches have been deleted. Squash and rebase merges are also recognized: if the branch's content is already in the hub default branch (or `origin/<default>`), the branch is deleted even though its SHAs differ.
+`wt sync` also refreshes `origin/HEAD`, so a remote that switched its default branch is followed even if the hub HEAD is stale. Keeping the hub default branch current lets `wt rm` recognize merged branches after their remote branches have been deleted. Squash and rebase merges are also recognized: if the branch's content is already in the hub default branch (or `origin/<default>`), the branch is deleted even though its SHAs differ. A branch whose tip is reachable from any other remote-tracking branch (for example a `release/*` branch) is deleted too.
 
 ## Design notes
 

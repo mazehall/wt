@@ -25,6 +25,15 @@ validate_component() {
 
 hub_of() { printf '%s/%s.git\n' "$HUB_ROOT" "$1"; }
 hub_git() { local repo="$1"; shift; git --git-dir="$(hub_of "$repo")" "$@"; }
+# The remote's default branch (origin/HEAD, refreshed by `wt sync`), falling
+# back to the hub HEAD. A hub HEAD can be stale after the remote switches its
+# default branch (e.g. release/v13 -> release/v14).
+default_branch_of() {
+  local repo="$1" ref
+  ref="$(hub_git "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [ -n "$ref" ]; then printf '%s\n' "${ref#origin/}"; return; fi
+  hub_git "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true
+}
 
 require_hub() {
 	local repo="$1"
@@ -247,6 +256,8 @@ cmd_sync() {
   require_hub "$repo"
   ensure_refspec "$repo"
   hub_git "$repo" fetch --prune origin
+  # Best effort: follow a changed remote default branch.
+  hub_git "$repo" remote set-head origin --auto >/dev/null 2>&1 || true
 
   # Never move a checked-out branch behind its worktree/index, or discard local commits.
   if [ "$(hub_git "$repo" rev-parse --is-bare-repository)" != true ]; then
@@ -254,11 +265,9 @@ cmd_sync() {
     return
   fi
   local ref branch old new worktrees line
-  ref="$(hub_git "$repo" symbolic-ref --quiet HEAD || true)"
-  case "$ref" in
-    refs/heads/*) branch="${ref#refs/heads/}" ;;
-    *) note "wt: $repo: fetched only (hub HEAD is detached)"; return ;;
-  esac
+  branch="$(default_branch_of "$repo")"
+  [ -n "$branch" ] || { note "wt: $repo: fetched only (hub HEAD is detached)"; return; }
+  ref="refs/heads/$branch"
   old="$(hub_git "$repo" rev-parse --verify --quiet "$ref" || true)"
   new="$(hub_git "$repo" rev-parse --verify --quiet "refs/remotes/origin/$branch" || true)"
   if [ -z "$old" ] || [ -z "$new" ]; then
@@ -444,7 +453,7 @@ cmd_rm() {
   # hub HEAD) are kept.
   if [ -n "$branch" ] && [ "$branch" != "HEAD" ]; then
     local default_branch
-    default_branch="$(hub_git "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    default_branch="$(default_branch_of "$repo")"
     if [ "$branch" = "$default_branch" ]; then
       note "wt: kept branch $branch (hub default branch)"
     elif hub_git "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
@@ -452,12 +461,21 @@ cmd_rm() {
         note "wt: deleted local branch $branch"
       else
         local base merged_into=""
-        for base in "refs/heads/$default_branch" "refs/remotes/origin/$default_branch"; do
-          if [ -n "$default_branch" ] && branch_content_in_base "$repo" "$branch" "$base"; then
-            merged_into="$base"
-            break
-          fi
-        done
+        # Reachable from another remote branch (e.g. a release branch that is
+        # not the hub HEAD): the commits live on there, nothing is lost.
+        merged_into="$(hub_git "$repo" for-each-ref --contains "refs/heads/$branch" \
+          --format='%(refname)' refs/remotes 2>/dev/null |
+          grep -v -e "^refs/remotes/[^/]*/$branch\$" -e '/HEAD$' | head -n 1 || true)"
+        if [ -z "$merged_into" ]; then
+          # Rewritten history (squash/rebase merge) into the default branches.
+          for base in "refs/heads/$default_branch" "refs/remotes/origin/$default_branch" \
+            "$(hub_git "$repo" symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null || true)"; do
+            if [ -n "$base" ] && branch_content_in_base "$repo" "$branch" "$base"; then
+              merged_into="$base"
+              break
+            fi
+          done
+        fi
         if [ -n "$merged_into" ] && hub_git "$repo" branch -D "$branch" >/dev/null 2>&1; then
           note "wt: deleted local branch $branch (content already in ${merged_into#refs/})"
         else
