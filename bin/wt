@@ -383,19 +383,32 @@ cmd_list() {
   done
 }
 
+# One line per non-merge commit: author, subject and touched paths. Identifies
+# a commit that was rebased or cherry-picked with edits (so patch-id differs).
+commit_keys() {
+  local repo="$1"; shift
+  hub_git "$repo" log --no-merges --name-only --format='@@%an%x09%s' "$@" |
+    awk '/^@@/ { if (k != "") print k; k = $0; next } NF { k = k "\t" $0 } END { if (k != "") print k }' |
+    LC_ALL=C sort -u
+}
+
 # True when every change on <branch> is already contained in <base>, even if the
-# commits were rewritten (rebase merge: all commits patch-equivalent; squash
-# merge: merging the branch into base yields base's own tree).
+# commits were rewritten: rebase merge (patch-equivalent), squash merge (merging
+# the branch yields base's own tree), or rebase/cherry-pick with edits (each
+# branch commit has one in base with the same author, subject and file set).
 branch_content_in_base() {
   local repo="$1" branch="$2" base="$3" merged_tree base_tree
   hub_git "$repo" rev-parse --verify --quiet "$base^{commit}" >/dev/null || return 1
   if ! hub_git "$repo" cherry "$base" "refs/heads/$branch" 2>/dev/null | grep -q '^+'; then
     return 0
   fi
-  merged_tree="$(hub_git "$repo" merge-tree --write-tree "$base" "refs/heads/$branch" 2>/dev/null)" || return 1
-  merged_tree="${merged_tree%%$'\n'*}"
-  base_tree="$(hub_git "$repo" rev-parse "$base^{tree}" 2>/dev/null)" || return 1
-  [ "$merged_tree" = "$base_tree" ]
+  if merged_tree="$(hub_git "$repo" merge-tree --write-tree "$base" "refs/heads/$branch" 2>/dev/null)"; then
+    merged_tree="${merged_tree%%$'\n'*}"
+    base_tree="$(hub_git "$repo" rev-parse "$base^{tree}" 2>/dev/null || true)"
+    [ "$merged_tree" = "$base_tree" ] && return 0
+  fi
+  [ -z "$(comm -23 <(commit_keys "$repo" "$base..refs/heads/$branch") \
+                   <(commit_keys "$repo" "refs/heads/$branch..$base"))" ]
 }
 
 cmd_rm() {
