@@ -65,6 +65,28 @@ before="$(git --git-dir="$tmp/origin.git" for-each-ref)"
 git --git-dir="$hub" rev-parse --verify --quiet refs/heads/squashed >/dev/null \
   && fail 'squash-merged local branch was kept'
 
+# Rebased with edits (patch-id differs) and a branch only sharing a subject.
+"$wt" new r edited --base origin/main >/dev/null 2>&1
+"$wt" new r lookalike --base origin/main >/dev/null 2>&1
+echo one > "$WT_ROOT/r/edited/e.txt"
+git -C "$WT_ROOT/r/edited" add e.txt
+git -C "$WT_ROOT/r/edited" commit -q -m "ci: tweak"
+echo x > "$WT_ROOT/r/lookalike/other.txt"
+git -C "$WT_ROOT/r/lookalike" add other.txt
+git -C "$WT_ROOT/r/lookalike" commit -q -m "ci: tweak"
+git -C "$tmp/source" pull -q origin main
+echo two > "$tmp/source/e.txt"
+git -C "$tmp/source" add e.txt
+git -C "$tmp/source" commit -q -m "ci: tweak"
+git -C "$tmp/source" push -q origin main
+git --git-dir="$hub" fetch -q origin
+"$wt" rm r edited >/dev/null 2>&1 || fail 'wt rm failed for edited worktree'
+"$wt" rm r lookalike >/dev/null 2>&1 || fail 'wt rm failed for lookalike worktree'
+git --git-dir="$hub" rev-parse --verify --quiet refs/heads/edited >/dev/null \
+  && fail 'rebased-with-edits branch was kept'
+git --git-dir="$hub" rev-parse --verify --quiet refs/heads/lookalike >/dev/null \
+  || fail 'branch with same subject but different files was deleted'
+
 # Branch contained in another remote branch (not the hub HEAD) is safe to delete.
 "$wt" new r viarelease --base origin/main >/dev/null 2>&1
 echo r > "$WT_ROOT/r/viarelease/r.txt"
